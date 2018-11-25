@@ -1,6 +1,6 @@
 # region proposal network
 
-import tensorflow
+import tensorflow as tf
 from tensorflow import keras
 
 def rpn(base_layers, num_anchors):

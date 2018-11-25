@@ -1,13 +1,13 @@
 # ResNet50
 
-import tensorflow
+import tensorflow as tf
 from tensorflow import keras
 
 WEIGHT_PATH = 'resnet50_weights_tf_dim_ordering_tf_kernels.h5'
 
 def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=True):
   filter1, filter2, filter3 = filters
-  bn_axis = 1
+  bn_axis = 3
   conv_name_base = 'res%s_branch' % (str(stage)+block)
   bn_name_base = 'bn%s_branch' % (str(stage)+block)
 
@@ -31,7 +31,7 @@ def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=T
 
 def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2), trainable=True):
   filter1, filter2, filter3 = filters
-  bn_axis = 1
+  bn_axis = 3
   conv_name_base = 'res%s_branch' % (str(stage)+block)
   bn_name_base = 'bn%s_branch' % (str(stage)+block)
 
@@ -63,7 +63,7 @@ def nn_base(input_tensor, trainable=True):
   else:
     img_input = keras.layers.Input(tensor=input_tensor, shape=(3, None, None))
   
-  bn_axis=1
+  bn_axis=3
 
   # conv1
   x = keras.layers.Conv2D(64, (7, 7), strides=(2, 2), padding='same',
