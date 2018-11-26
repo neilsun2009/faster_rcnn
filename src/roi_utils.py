@@ -83,10 +83,7 @@ def cal_iou(rois, img_data, config, class_mapping):
   Y2 = tf.expand_dims(tf.concat((y_class_regr_label, y_class_regr_coords), axis=1), 0)
   return X, Y1, Y2, ious
     
-
-
-
-
+    
 def non_max_suppresion_fast(boxes, probs, overlap_threshold=0.9, max_boxes=300):
   # code used refers to here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
   if len(boxes) == 0:
