@@ -4,9 +4,88 @@ import tensorflow as tf
 from tensorflow import keras
 import time
 import numpy as np
+import data_generator
 
 def delete_np(tensor, idx, axis=0):
   return np.delete(tensor, idx, axis=axis)
+
+def cal_iou(rois, img_data, config, class_mapping):
+  bboxes = img_data['bboxes']
+  width, height = img_data['width'], img_data['height']
+  resized_width, resized_height = data_generator.get_new_img_size(width, height, config.img_size)
+  
+  # ground truth
+  gt = tf.zeros((len(bboxes), 4))
+  for idx, bbox in enumerate(bboxes):
+    gt[idx, 0] = (bbox['x1'] * (resized_width/width) / config.rpn_stride).as_type(tf.int32)
+    gt[idx, 2] = (bbox['x2'] * (resized_width/width) / config.rpn_stride).as_type(tf.int32)
+    gt[idx, 1] = (bbox['y1'] * (resized_height/height) / config.rpn_stride).as_type(tf.int32)
+    gt[idx, 3] = (bbox['y2'] * (resized_height/height) / config.rpn_stride).as_type(tf.int32)
+
+  x_roi = []
+  y_class_num = []
+  y_class_regr_coords = []
+  y_class_regr_label = []
+  ious = [] # for debug
+
+  for i in range(rois.shape[0]):
+    x1, y1, x2, y2 = rois[i, :]
+    best_iou = 0
+    best_bbox = -1
+    for idx in range(len(bboxes)):
+      curr_iou = data_generator.iou((gt[idx, 0], gt[idx, 1], gt[idx, 2], gt[idx, 3]),
+        (x1, y1, x2, y2))
+      if curr_iou > best_iou:
+        best_iou = curr_iou
+        best_bbox = idx
+    if best_iou < config.classifier_min_overlap:
+      continue
+    w = x2 - x1
+    h = y2 - y1
+    x_roi.append([x1, y1, w, h])
+    ious.append(best_iou)
+    # check for ground truth class and regression delta value 
+    if best_iou < config.classifier_max_overlap:
+      cls_name = 'bg'
+    else:
+      cls_name = bbox[best_bbox]['class']
+      cx_gt = (gt[best_bbox, 0] + gt[best_bbox, 2]) / 2
+      cy_gt = (gt[best_bbox, 1] + gt[best_bbox, 3]) / 2
+      cx = (x1 + x2) / 2
+      cy = (y1 + y2) / 2
+      tx = (cx_gt - cx) / w
+      ty = (cy_gt - cy) / h
+      tw = tf.math.log((gt[best_bbox, 2] - gt[best_bbox, 0]) / w)
+      th = tf.math.log((gt[best_bbox, 3] - gt[best_bbox, 1]) / h)
+    # order
+    class_num = class_mapping[cls_name]
+    class_label = len(class_mapping) * [0]
+    class_label[class_num] = 1
+    y_class_num.append(class_label.copy())
+    coords = [0] * 4 * (len(class_mapping) - 1) # remove bg class
+    labels = [0] * 4 * (len(class_mapping) - 1)
+    if cls_name != 'bg':
+      label_pos = 4 * class_num
+      sx, sy, sw, sh = config.classifier_regr_std
+      coords[label_pos:label_pos+4] = [sx*tx, sy*ty, sw*tw, sh*th]
+      coords[label_pos:label_pos+4] = [1, 1, 1, 1]
+      y_class_regr_coords.append(coords.copy())
+      y_class_regr_label.append(labels.copy())
+    else:
+      y_class_regr_coords.append(coords.copy())
+      y_class_regr_label.append(labels.copy())
+  
+  # return
+  if len(x_roi) == 0:
+    return None, None, None, None
+  X = tf.expand_dims(x_roi, axis=0)
+  Y1 = tf.expand_dims(y_class_num, 0)
+  Y2 = tf.expand_dims(tf.concat((y_class_regr_label, y_class_regr_coords), axis=1), 0)
+  return X, Y1, Y2, ious
+    
+
+
+
 
 def non_max_suppresion_fast(boxes, probs, overlap_threshold=0.9, max_boxes=300):
   # code used refers to here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
@@ -73,7 +152,6 @@ def apply_regress(X, T):
   except Exception as e:
     print(e)
     return X
-
 
 
 def rpn_to_roi(rpn_layer, regress_layer, config, max_boxes=300,
