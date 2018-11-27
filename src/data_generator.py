@@ -169,7 +169,7 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
               tx = (cx_gt - cx) / (x2 - x1)
               ty = (cy_gt - cy) / (y2 - y1)
               tw = tf.math.log((gt[bbox_num, 2] - gt[bbox_num, 0]) / (x2 - x1))
-              th = tf.math.log((gt[bbox_num, 3] - gt[v, 1]) / (y2 - y1))
+              th = tf.math.log((gt[bbox_num, 3] - gt[bbox_num, 1]) / (y2 - y1))
             if img_data['bboxes'][bbox_num]['class'] != 'bg':
               # all GT boxes should be mapped to an anchor box, so we keep track of which anchor box was best
               if curr_iou > best_iou_for_bbox[bbox_num]:
