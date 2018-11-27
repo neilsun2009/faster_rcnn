@@ -19,8 +19,8 @@ def rpn_loss_regr(num_anchors):
 
 def rpn_loss_cls(num_anchors):
   def rpn_loss_cls_fixed_num(y_true, y_pred):
-    # y_true[:, :, :, :num_anchors] decides whether should be frontground
-    # y_true[:, :, :, num_anchors:] decides the score for frontground
+    # y_true[:, :, :, :num_anchors] decides whether should be a valid box (bg or fg)
+    # y_true[:, :, :, num_anchors:] decides whether should be a frontground
     return lambda_rpn_class * tf.reduce_sum(y_true[:, :, :, :num_anchors] * keras.losses.binary_crossentropy(y_pred, y_true[:, :, :, num_anchors:])) / tf.reduce_sum(epsilon+y_true[:, :, :, :num_anchors])
   return rpn_loss_cls_fixed_num
 

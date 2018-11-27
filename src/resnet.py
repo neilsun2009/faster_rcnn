@@ -5,6 +5,21 @@ from tensorflow import keras
 
 WEIGHT_PATH = 'resnet50_weights_tf_dim_ordering_tf_kernels.h5'
 
+# imitate the procedure of resnet
+# get the feature map w/h
+def get_img_output_length(width, height):
+  def get_output_length(input_length):
+    # zero_pad
+    input_length += 6
+    # 4 strided operations
+    # conv1, maxpool, conv3, conv4
+    filter_sizes = [7, 3, 1, 1]
+    stride = 2
+    for filter_size in filter_sizes:
+      input_length = (input_length - filter_size + stride) // stride
+    return input_length
+  return get_output_length(width), get_output_length(height)
+
 def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=True):
   filter1, filter2, filter3 = filters
   bn_axis = 3
