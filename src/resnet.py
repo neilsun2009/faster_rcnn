@@ -125,7 +125,7 @@ def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=T
 #   x = keras.layers.ReLU()(x)
 #   return x
 
-def conv_block(input_tensor, kernel_size, filters, stage, block, input_shape, strides=(2, 2), trainable=True):
+def conv_block(input_tensor, kernel_size, filters, stage, block, input_shape=None, strides=(2, 2), trainable=True):
   filter1, filter2, filter3 = filters
   bn_axis = 3
   conv_name_base = 'res%s_branch' % (str(stage)+block)
@@ -194,11 +194,11 @@ def nn_base(input_tensor, trainable=False):
   bn_axis=3
 
   # conv1
-  x = keras.layers.Conv2D(64, (7, 7), strides=(2, 2), padding='same',
+  x = tf.layers.Conv2D(64, (7, 7), strides=(2, 2), padding='same',
     name='conv1', trainable=trainable)(input_tensor)
-  x = keras.layers.BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
-  x = keras.layers.ReLU()(x)
-  x = keras.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
+  x = tf.layers.BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+  x = tf.nn.relu(x)
+  x = tf.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
 
   # conv2
   x = conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1), trainable=trainable)
@@ -283,10 +283,10 @@ def classifier(img, rois, num_rois, input_shape, n_classes=21, trainable=False):
   # # no regerssion for bg class
   # out_regress = keras.layers.TimeDistributed(keras.layers.Dense(4*(n_classes-1), activation='linear', kernel_initializer='zero'),
   #   name='dense_regress_'+str(n_classes))(out)
-  out_class = tf.layers.Dense(n_classes, use_bias=False, kernel_initializer='zero',
+  out_class = tf.layers.Dense(n_classes, kernel_initializer='zero',
     name='dense_class_'+str(n_classes))(out)
   # no regerssion for bg class
-  out_regress = tf.layers.Dense(4*(n_classes-1), use_bias=False, kernel_initializer='zero',
+  out_regress = tf.layers.Dense(4*(n_classes-1), kernel_initializer='zero',
     name='dense_regress_'+str(n_classes))(out)
   # out_class = tf.expand_dims(out_class, axis=0)
   # out_regress = tf.expand_dims(out_regress, axis=0)
