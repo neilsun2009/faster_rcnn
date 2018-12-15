@@ -10,9 +10,9 @@ class Config:
     self.base_net_weights = 'resnet50_weights_tf_dim_ordering_tf_kernels.h5'
 
     # setting for data augmentation
-    self.use_horizontal_flips = False
-    self.use_vertical_flips = False
-    self.rot_90 = False
+    self.use_horizontal_flips = True
+    self.use_vertical_flips = True
+    self.rot_90 = True
 
     # anchor box scales
     self.anchor_box_scales = [128, 256, 512]

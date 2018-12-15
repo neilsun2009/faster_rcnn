@@ -1,0 +1,1 @@
+{"filepath": "F:\\myMachineLearning\\faster_rcnn\\src/data/VOCdevkit/VOC2007\\JPEGImages\\000012.jpg", "width": 333, "height": 500, "bboxes": [{"class": "car", "x1": 97, "x2": 270, "y1": 156, "y2": 351, "difficult": false}], "imageset": "trainval"}

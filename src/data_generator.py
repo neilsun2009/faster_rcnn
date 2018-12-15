@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import random
+import json
 
 def union(a, b, area_intersect):
   area_a = (a[2] - a[0]) * (a[3] - a[1])
@@ -12,8 +13,19 @@ def union(a, b, area_intersect):
 def intersetion(a, b):
   x1 = tf.maximum(a[0], b[0])
   y1 = tf.maximum(a[1], b[1])
-  x2 = tf.maximum(a[2], b[2])
-  y2 = tf.maximum(a[3], b[3])
+  x2 = tf.minimum(a[2], b[2])
+  y2 = tf.minimum(a[3], b[3])
+  w = x2 - x1
+  h = y2 - y1
+  if w <= 0 or h < 0:
+    return 0
+  return w * h
+
+def intersetion_np(a, b):
+  x1 = max(a[0], b[0])
+  y1 = max(a[1], b[1])
+  x2 = min(a[2], b[2])
+  y2 = min(a[3], b[3])
   w = x2 - x1
   h = y2 - y1
   if w <= 0 or h < 0:
@@ -23,6 +35,12 @@ def intersetion(a, b):
 def iou(a, b):
   # (x1, y1, x2, y2)
   area_intersect = intersetion(a, b)
+  area_union = union(a, b, area_intersect)
+  return area_intersect / area_union
+
+def iou_np(a, b):
+  # (x1, y1, x2, y2)
+  area_intersect = intersetion_np(a, b)
   area_union = union(a, b, area_intersect)
   return area_intersect / area_union
 
@@ -37,19 +55,36 @@ def get_new_img_size(width, height, img_min_side=600):
     resized_height = img_min_side
   return resized_width, resized_height
 
+def get_new_img_size_np(width, height, img_min_side=600):
+  if width <= height:
+    f = img_min_side / width
+    resized_height = int(f * height)
+    resized_width = img_min_side
+  else:
+    f = img_min_side / height
+    resized_width = int(f * width)
+    resized_height = img_min_side
+  return resized_width, resized_height
+
 def data_augment(img_data, config):
+  # print(img_data)
   assert 'filepath' in img_data
   assert 'bboxes' in img_data
   assert 'width' in img_data
   assert 'height' in img_data
 
-  img_data_aug = img_data.copy()
-  img = tf.read_file(img_data_aug['filepath'])
-  img = tf.image.decode_jpeg(img, channels=3)
+  # print(img_data)
 
-  height, width = tf.shape(img)[:2]
+  img_data_aug = img_data.copy()
+  # img = tf.read_file(img_data_aug['filepath'])
+  # img = tf.image.decode_jpeg(img, channels=3)
+  img = cv2.imread(img_data_aug['filepath'])
+  # img = tf.image.decode_jpeg(img, channels=3)
+  # print(img)
+  height, width = img.shape[:2]
   if config.use_horizontal_flips and np.random.randint(0, 2) == 0:
-    img = tf.image.flip_left_right(img)
+    # img = tf.image.flip_left_right(img)
+    img = cv2.flip(img, 1)
     for bbox in img_data_aug['bboxes']:
       x1 = bbox['x1']
       x2 = bbox['x2']
@@ -57,7 +92,8 @@ def data_augment(img_data, config):
       bbox['x1'] = width - x2
 
   if config.use_vertical_flips and np.random.randint(0, 2) == 0:
-    img = tf.image.flip_up_down(img)
+    # img = tf.image.flip_up_down(img)
+    img = cv2.flip(img, 0)
     for bbox in img_data_aug['bboxes']:
       y1 = bbox['y1']
       y2 = bbox['y2']
@@ -67,14 +103,19 @@ def data_augment(img_data, config):
   if config.rot_90:
     angle = np.random.choice([0, 90, 180, 270], 1)[0]
     if angle == 270:
-      img = tf.image.transpose_image(img)
-      img = tf.image.flip_up_down(img)
+      # img = tf.image.transpose_image(img)
+      # img = tf.image.flip_up_down(img)
+      img = np.transpose(img, (1,0,2))
+      img = cv2.flip(img, 0)
     elif angle == 180:
-      img = tf.image.flip_up_down(img)
-      img = tf.image.flip_left_right(img)
+      # img = tf.image.flip_up_down(img)
+      # img = tf.image.flip_left_right(img)
+      img = cv2.flip(img, -1)
     elif angle == 90:
-      img = tf.image.transpose_image(img)
-      img = tf.image.flip_left_right(img)
+      # img = tf.image.transpose_image(img)
+      # img = tf.image.flip_left_right(img)
+      img = np.transpose(img, (1,0,2))
+      img = cv2.flip(img, 1)
     elif angle == 0:
       pass
     
@@ -100,8 +141,10 @@ def data_augment(img_data, config):
         bbox['y2'] = x2
       elif angle == 0:
         pass
-  img_data_aug['width'] = tf.shape(img)[1]
-  img_data_aug['height'] = tf.shape(img)[0]
+  img_data_aug['width'] = img.shape[1]
+  img_data_aug['height'] = img.shape[0]
+  # img_data_aug['width'] = tf.shape(img)[1]
+  # img_data_aug['height'] = tf.shape(img)[0]
   return img_data_aug, img
   
 def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_length_calc_func):
@@ -115,21 +158,32 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
   (output_width, output_height) = img_length_calc_func(resized_width, resized_height)
   
   # init output
-  y_rpn_overlap = tf.zeros((output_height, output_width, num_anchors))
-  y_is_box_valid = tf.zeros((output_height, output_width, num_anchors))
-  y_rpn_regr = tf.zeros((output_height, output_width, num_anchors * 4))
+  y_rpn_overlap = np.zeros((output_height, output_width, num_anchors))
+  y_is_box_valid = np.zeros((output_height, output_width, num_anchors))
+  y_rpn_regr = np.zeros((output_height, output_width, num_anchors * 4))
+  # y_rpn_overlap = tf.zeros((output_height, output_width, num_anchors))
+  # y_is_box_valid = tf.zeros((output_height, output_width, num_anchors))
+  # y_rpn_regr = tf.zeros((output_height, output_width, num_anchors * 4))
 
   num_bboxes = len(img_data['bboxes'])
 
-  num_anchors_for_bbox = tf.zeros(num_bboxes).as_type(tf.int32)
+  # num_anchors_for_bbox = tf.zeros(num_bboxes).as_type(tf.int32)
+  # # 4 stands for jy, ix, anchor_ratio_idx, anchor_size_idx
+  # best_anchor_for_bbox = -1 * tf.ones((num_bboxes, 4)).as_type(tf.int32)
+  # best_iou_for_bbox = tf.zeros(num_bboxes).as_type(tf.float32)
+  # best_x_for_bbox = tf.ones((num_bboxes, 4)).as_type(tf.int32)
+  # best_dx_for_bbox = tf.ones((num_bboxes, 4)).as_type(tf.float32)
+
+  num_anchors_for_bbox = np.zeros(num_bboxes).astype(np.int32)
   # 4 stands for jy, ix, anchor_ratio_idx, anchor_size_idx
-  best_anchor_for_bbox = -1 * tf.ones((num_bboxes, 4)).as_type(tf.int32)
-  best_iou_for_bbox = tf.zeros(num_bboxes).as_type(tf.float32)
-  best_x_for_bbox = tf.ones((num_bboxes, 4)).as_type(tf.int32)
-  best_dx_for_bbox = tf.ones((num_bboxes, 4)).as_type(tf.float32)
+  best_anchor_for_bbox = -1 * np.ones((num_bboxes, 4)).astype(np.int32)
+  best_iou_for_bbox = np.zeros(num_bboxes).astype(np.float32)
+  best_x_for_bbox = np.ones((num_bboxes, 4)).astype(np.int32)
+  best_dx_for_bbox = np.ones((num_bboxes, 4)).astype(np.float32)
 
   # ground truth boxes, resized
-  gt = tf.zeros((num_bboxes, 4))
+  gt = np.zeros((num_bboxes, 4))
+  # gt = tf.zeros((num_bboxes, 4))
   for idx, bbox in enumerate(img_data['bboxes']):
     gt[idx, 0] = bbox['x1'] * (resized_width / width)
     gt[idx, 2] = bbox['x2'] * (resized_width / width)
@@ -160,7 +214,7 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
           best_iou_for_loc = 0.0
 
           for bbox_num in range(num_bboxes):
-            curr_iou = iou([gt[bbox_num, 0], gt[bbox_num, 1], gt[bbox_num, 2], gt[bbox_num, 3]], [x1, y1, x2, y2])
+            curr_iou = iou_np([gt[bbox_num, 0], gt[bbox_num, 1], gt[bbox_num, 2], gt[bbox_num, 3]], [x1, y1, x2, y2])
             if curr_iou > best_iou_for_bbox[bbox_num] or curr_iou > config.rpn_max_overlap:
               cx_gt = (gt[bbox_num, 0] + gt[bbox_num, 2]) / 2
               cy_gt = (gt[bbox_num, 1] + gt[bbox_num, 3]) / 2
@@ -168,8 +222,10 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
               cy = (y1 + y2) / 2
               tx = (cx_gt - cx) / (x2 - x1)
               ty = (cy_gt - cy) / (y2 - y1)
-              tw = tf.math.log((gt[bbox_num, 2] - gt[bbox_num, 0]) / (x2 - x1))
-              th = tf.math.log((gt[bbox_num, 3] - gt[bbox_num, 1]) / (y2 - y1))
+              tw = np.log((gt[bbox_num, 2] - gt[bbox_num, 0]) / (x2 - x1))
+              th = np.log((gt[bbox_num, 3] - gt[bbox_num, 1]) / (y2 - y1))
+              # tw = tf.math.log((gt[bbox_num, 2] - gt[bbox_num, 0]) / (x2 - x1))
+              # th = tf.math.log((gt[bbox_num, 3] - gt[bbox_num, 1]) / (y2 - y1))
             if img_data['bboxes'][bbox_num]['class'] != 'bg':
               # all GT boxes should be mapped to an anchor box, so we keep track of which anchor box was best
               if curr_iou > best_iou_for_bbox[bbox_num]:
@@ -206,7 +262,7 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
       # no box with an IOU greater than zero ...
       if best_anchor_for_bbox[idx, 0] == -1:
         continue
-      jy, ix, anchor_ratio_idx, anchor_size_idx = best_anchor_for_bbox[idx, 0]
+      jy, ix, anchor_ratio_idx, anchor_size_idx = best_anchor_for_bbox[idx]
       y_is_box_valid[jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx] = 1
       y_rpn_overlap[jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx] = 1
       start = 4 * (anchor_ratio_idx + n_anchratios * anchor_size_idx)
@@ -216,8 +272,10 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
 	# regions, to make pos==neg. 
   # We also limit it to maximal 256 regions.
   num_regions = 256
-  pos_locs = tf.where(y_is_box_valid == 1 & y_rpn_overlap == 1)
-  neg_locs = tf.where(y_is_box_valid == 1 & y_rpn_overlap == 0)
+  pos_locs = np.where(np.logical_and(y_is_box_valid == 1, y_rpn_overlap == 1))
+  neg_locs = np.where(np.logical_and(y_is_box_valid == 1, y_rpn_overlap == 0))
+  # pos_locs = tf.where(y_is_box_valid == 1 & y_rpn_overlap == 1)
+  # neg_locs = tf.where(y_is_box_valid == 1 & y_rpn_overlap == 0)
   num_pos = len(pos_locs[0])
   num_neg = len(neg_locs[0])
   num_regions = 256
@@ -230,33 +288,55 @@ def cal_rpn(config, img_data, width, height, resized_width, resized_height, img_
   
   if num_neg + num_pos > num_regions:
     del_locs = random.sample(range(num_neg), num_neg - num_pos)
-    y_is_box_valid[pos_locs[0][del_locs], pos_locs[1][del_locs], pos_locs[2][del_locs]] = 0
+    y_is_box_valid[neg_locs[0][del_locs], neg_locs[1][del_locs], neg_locs[2][del_locs]] = 0
 
-  y_rpn_cls = tf.concat((y_is_box_valid, y_rpn_overlap), axis=-1)
-  y_rpn_cls = tf.expand_dims(y_rpn_cls, axis=0)
-  y_rpn_regr = tf.expand_dims(y_rpn_regr, axis=0)
+  y_rpn_cls = np.concatenate((y_is_box_valid, y_rpn_overlap), axis=-1)
+  y_rpn_cls = np.expand_dims(y_rpn_cls, axis=0)
+  y_rpn_regr = np.concatenate((np.repeat(y_rpn_overlap, 4, axis=-1), y_rpn_regr), axis=-1)
+  y_rpn_regr = np.expand_dims(y_rpn_regr, axis=0)
+  # y_rpn_cls = tf.concat((y_is_box_valid, y_rpn_overlap), axis=-1)
+  # y_rpn_cls = tf.expand_dims(y_rpn_cls, axis=0)
+  # y_rpn_regr = tf.expand_dims(y_rpn_regr, axis=0)
   
   return y_rpn_cls, y_rpn_regr
 
 # get ground truth anchor
-def get_anchor_gt(img_data, class_count, config, img_length_calc_func):
-  img_data_aug, x_img = data_augment(img_data, config)
-  width, height =img_data_aug['width'], img_data_aug['height']
-  rows, cols, _ = x_img.shape
+def get_anchor_gt(all_img_data, class_count, config, img_length_calc_func, img_data_path):
+  # print(all_img_data)
   
-  assert cols == width
-  assert rows == height
+  # img_data = json.loads(img_data)
+  # print(img_data)
 
-  (resized_width, resized_height) = get_new_img_size(width, height, config.im_size)
-  x_img = tf.image.resize_images(x_img, (resized_width, resized_height))
-  y_rpn_cls, y_rpn_regr = cal_rpn(config, img_data_aug, width, height, resized_width, resized_height, img_length_calc_func)
+  for img_data in all_img_data:
+    # print(img_data)
+    img_data_aug, x_img = data_augment(img_data, config)
+    width, height =img_data_aug['width'], img_data_aug['height']
+    rows, cols, _ = x_img.shape
+    
+    assert cols == width
+    assert rows == height
 
-  x_img[:, :, 0] -= config.img_channel_mean[0]
-  x_img[:, :, 1] -= config.img_channel_mean[1]
-  x_img[:, :, 2] -= config.img_channel_mean[2]
-  x_img /= config.img_scaling_factor
+    (resized_width, resized_height) = get_new_img_size_np(width, height, config.im_size)
+    print(resized_width, resized_height)
+    x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
+    # x_img = tf.image.resize_images(x_img, (resized_width, resized_height))
+    y_rpn_cls, y_rpn_regr = cal_rpn(config, img_data_aug, width, height, resized_width, resized_height, img_length_calc_func)
 
-  x_img = tf.expand_dims(x_img, axis=0)
-  y_rpn_regr[:, :, :, y_rpn_regr.shape[-1]//2:] *= config.std_scaling
+    x_img = x_img[:, :, (2, 1, 0)] # BGR -> RGB
+    x_img = x_img.astype(np.float32)
 
-  return x_img, [y_rpn_cls, y_rpn_regr], img_data_aug
+    x_img[:, :, 0] -= config.img_channel_mean[0]
+    x_img[:, :, 1] -= config.img_channel_mean[1]
+    x_img[:, :, 2] -= config.img_channel_mean[2]
+    x_img /= config.img_scaling_factor
+
+    x_img = np.expand_dims(x_img, axis=0)
+    # x_img = tf.expand_dims(x_img, axis=0)
+    y_rpn_regr[:, :, :, y_rpn_regr.shape[-1]//2:] *= config.std_scaling
+
+    print(x_img.shape)
+    print(y_rpn_cls.shape)
+    print(y_rpn_regr.shape)
+    with open(img_data_path, 'w') as f:
+      json.dump(img_data_aug, f)
+    yield x_img, y_rpn_cls, y_rpn_regr
